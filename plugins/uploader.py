@@ -17,7 +17,8 @@ import asyncio
 def sync_download(url, output_path, referer):
     print(f"DEBUG sync_download URL: {url}")
     try:
-        r = cffi_requests.get(url, stream=True, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Referer': referer, 'Origin': referer})
+        ref_header = referer + "/" if referer and not referer.endswith("/") else referer
+        r = cffi_requests.get(url, stream=True, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Referer': ref_header, 'Origin': referer})
         r.raise_for_status()
         with open(output_path, 'wb') as f:
             for chunk in r.iter_content(chunk_size=8192):
@@ -131,11 +132,18 @@ async def download_m3u8(url, output_path, base_url, user_id=None):
                         'host': 'api.classplusapp.com',
                         'x-access-token': token_val,
                         'accept-language': 'EN',
-                        'api-version': '29',
-                        'app-version': '1.4.65.3',
-                        'device-id': '39F093FF35F201D9',
+                        'api-version': '18',
+                        'app-version': '1.4.73.2',
+                        'device-id': 'c28d3cb16bbdac01',
                         'user-agent': 'Mobile-Android'
                     }
+                    
+                    try:
+                        jw_res = requests.get('https://api.classplusapp.com/cams/uploader/video/jw-signed-url', headers=cp_headers, params={'contentId': content_id, 'offlineDownload': 'false'})
+                        if jw_res.status_code == 200 and 'url' in jw_res.json():
+                            url = jw_res.json()['url']
+                    except Exception as e:
+                        print("Failed JW signed URL:", e)
                     
                     # Fetch the folder contents directly from Classplus API again
                     api_url = f"https://api.classplusapp.com/v2/course/content/get?courseId={course_id}&folderId={folder_id}"
@@ -357,12 +365,12 @@ async def handle_document(client: Client, message: Message):
             pdf_path = re.sub(r'[\\/*?:"<>|]', '_', pdf_path) # sanitize
             
             aes_key = None
-            if ":Zm" in link or ":" in link.split("/")[-1]:
+            if "*" in link and 'encrypted.m' in link:
+                parts = link.split("*", 1)
+                link = parts[0]
+                aes_key = parts[1]
+            elif ":Zm" in link or ":" in link.split("/")[-1]:
                 parts = link.rsplit(":", 1)
-                if len(parts) == 2 and len(parts[1]) > 10 and "=" in parts[1]:
-                    link, aes_key = parts
-            elif "*" in link:
-                parts = link.rsplit("*", 1)
                 if len(parts) == 2 and len(parts[1]) > 10 and "=" in parts[1]:
                     link, aes_key = parts
 
