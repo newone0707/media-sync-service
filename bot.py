@@ -1,8 +1,10 @@
+import asyncio
+asyncio.set_event_loop(asyncio.new_event_loop())
+
 import os
 import threading
 from pyrogram import Client, idle
 from flask import Flask
-import asyncio
 import static_ffmpeg
 from config import API_ID, API_HASH, BOT_TOKEN
 
@@ -13,7 +15,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def index():
-    return "Pyrogram Bot is Running ✅"
+    return "Pyrogram Bot is Running."
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
