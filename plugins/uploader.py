@@ -379,11 +379,12 @@ async def handle_document(client: Client, message: Message):
             import re
             pdf_path = re.sub(r'[\\/*?:"<>|]', '_', pdf_path) # sanitize
             
+            # AES key extraction: check * FIRST (format is URL*KEY:IV)
             aes_key = None
-            if "*" in link and 'encrypted.m' in link:
-                parts = link.split("*", 1)
-                link = parts[0]
-                aes_key = parts[1]
+            if "*" in link:
+                star_parts = link.split("*", 1)
+                link = star_parts[0]
+                aes_key = star_parts[1]
             elif ":Zm" in link or ":" in link.split("/")[-1]:
                 parts = link.rsplit(":", 1)
                 if len(parts) == 2 and len(parts[1]) > 10 and "=" in parts[1]:
@@ -448,13 +449,14 @@ async def handle_document(client: Client, message: Message):
             mp4_path = f"{name}.mp4"
             mp4_path = re.sub(r'[\\/*?:"<>|]', '_', mp4_path)
             
+            # AES key extraction: check * FIRST (format is URL*KEY:IV)
             aes_key = None
-            if ":Zm" in link or ":" in link.split("/")[-1]: # Appx AES keys often start with Zm or are appended with :
+            if "*" in link:
+                star_parts = link.split("*", 1)
+                link = star_parts[0]
+                aes_key = star_parts[1]
+            elif ":Zm" in link or ":" in link.split("/")[-1]:
                 parts = link.rsplit(":", 1)
-                if len(parts) == 2 and len(parts[1]) > 10 and "=" in parts[1]:
-                    link, aes_key = parts
-            elif "*" in link:
-                parts = link.rsplit("*", 1)
                 if len(parts) == 2 and len(parts[1]) > 10 and "=" in parts[1]:
                     link, aes_key = parts
             
