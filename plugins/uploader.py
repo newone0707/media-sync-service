@@ -18,7 +18,8 @@ def sync_download(url, output_path, referer):
     print(f"DEBUG sync_download URL: {url}")
     try:
         ref_header = referer + "/" if referer and not referer.endswith("/") else referer
-        r = cffi_requests.get(url, stream=True, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Referer': ref_header, 'Origin': referer})
+        origin_header = referer[:-1] if referer and referer.endswith("/") else referer
+        r = cffi_requests.get(url, stream=True, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Referer': ref_header, 'Origin': origin_header}, impersonate="chrome")
         r.raise_for_status()
         with open(output_path, 'wb') as f:
             for chunk in r.iter_content(chunk_size=8192):
