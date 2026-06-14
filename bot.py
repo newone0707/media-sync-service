@@ -1,14 +1,12 @@
-import asyncio
-try:
-    asyncio.get_event_loop()
-except RuntimeError:
-    asyncio.set_event_loop(asyncio.new_event_loop())
-
 import os
 import threading
-from pyrogram import Client
+from pyrogram import Client, idle
 from flask import Flask
+import asyncio
+import static_ffmpeg
 from config import API_ID, API_HASH, BOT_TOKEN
+
+static_ffmpeg.add_paths()
 
 # Initialize Flask App for Render Free Tier Dummy Server
 app = Flask(__name__)
