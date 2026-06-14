@@ -322,14 +322,18 @@ async def handle_document(client: Client, message: Message):
     finally:
         pass
 
+    import re as _re
     links_to_upload = []
-    base_url = "https://web.classplusapp.com/"
+    raw_base_url = "https://web.classplusapp.com"
     for line in lines:
         line = line.strip()
         if not line or line.startswith("Course:"):
             continue
         if line.startswith("BaseURL:"):
-            base_url = line.split("BaseURL:")[1].strip()
+            raw_base_url = line.split("BaseURL:")[1].strip()
+            continue
+        # Skip encrypted blob lines like: Video: UXWcDRZQ65VRP...
+        if _re.match(r'^(Home\s*>.*>\s*)?Video:\s*[A-Za-z0-9+/]{20}', line):
             continue
         if ": " in line:
             name, link = line.split(": ", 1)
@@ -337,6 +341,15 @@ async def handle_document(client: Client, message: Message):
                 links_to_upload.append({"name": name.strip(), "link": link.strip()})
         elif line.startswith("http"):
              links_to_upload.append({"name": "Video", "link": line.strip()})
+
+    # Build correct referer: strip 'api' suffix, add trailing slash
+    # e.g. https://newchandanlogicsapi.classx.co.in -> https://newchandanlogics.classx.co.in/
+    # Also handles akamai.net.in, appx.co.in etc.
+    _m = _re.match(r'(https?://)([^.]+?)(api)?\.(.+)$', raw_base_url, _re.IGNORECASE)
+    if _m:
+        base_url = f"{_m.group(1)}{_m.group(2)}.{_m.group(4)}/"
+    else:
+        base_url = raw_base_url.rstrip('/') + '/'
 
     if limit > 0:
         links_to_upload = links_to_upload[:limit]
@@ -358,7 +371,9 @@ async def handle_document(client: Client, message: Message):
         link = item["link"]
         prog_msg = await message.reply_text(f"⏳ **Processing {i+1}/{len(links_to_upload)}:**\n`{name}`")
         
-        if ".pdf" in link.lower() or "pdf" in name.lower():
+        # Detect by actual file extension in the URL path (before query string)
+        _link_path = link.split("?")[0].lower()
+        if _link_path.endswith(".pdf") or "pdf" in name.lower():
             # Download PDF
             await prog_msg.edit_text(f"⏳ **Downloading PDF:**\n`{name}`")
             pdf_path = f"{name}.pdf"
@@ -375,30 +390,20 @@ async def handle_document(client: Client, message: Message):
                 if len(parts) == 2 and len(parts[1]) > 10 and "=" in parts[1]:
                     link, aes_key = parts
 
-            def sync_pdf_dl(actual_link):
+            def sync_pdf_dl(actual_link, _pdf_path, _referer):
                 try:
                     h = {'User-Agent': 'Mozilla/5.0', 'device-id': '39F093FF35F201D9'}
                     if "token=" in actual_link:
-                        token = link.split("token=")[1].split("&")[0]
-                        h['x-access-token'] = token
+                        _token = actual_link.split("token=")[1].split("&")[0]
+                        h['x-access-token'] = _token
                         h['api-version'] = "18"
-                        try:
-                            import base64
-                            import json
-                            payload = token.split(".")[1]
-                            padded = payload + "=" * ((4 - len(payload) % 4) % 4)
-                            jwt_data = json.loads(base64.b64decode(padded).decode("utf-8"))
-                            if "fingerprintId" in jwt_data:
-                                h['device-id'] = jwt_data["fingerprintId"]
-                            else:
-                                h['User-Agent'] = 'Mobile-Android'
-                                h['app-version'] = '1.4.65.3'
-                        except:
-                            pass
-                    r = cffi_requests.get(actual_link, stream=True, headers=h)
+                    elif "appx" in actual_link or "classx" in actual_link or "akamai" in actual_link:
+                        h['Referer'] = _referer
+                        h['Origin'] = _referer.rstrip('/')
+                    r = cffi_requests.get(actual_link, stream=True, headers=h, impersonate="chrome")
                     r.raise_for_status()
-                    with open(pdf_path, 'wb') as f:
-                        for chunk in r.iter_content(chunk_size=8192):
+                    with open(_pdf_path, 'wb') as f:
+                        for chunk in r.iter_content(chunk_size=65536):
                             f.write(chunk)
                     return True
                 except Exception as e:
@@ -406,7 +411,7 @@ async def handle_document(client: Client, message: Message):
                         debug_f.write(f"PDF Download Error: {e}\n")
                     print(f"PDF Download Error: {e}")
                     return False
-            success = await asyncio.to_thread(sync_pdf_dl, link)
+            success = await asyncio.to_thread(sync_pdf_dl, link, pdf_path, base_url)
             
             if success and aes_key and os.path.exists(pdf_path):
                 decrypted = decrypt_file(pdf_path, aes_key)
@@ -454,7 +459,30 @@ async def handle_document(client: Client, message: Message):
                 if len(parts) == 2 and len(parts[1]) > 10 and "=" in parts[1]:
                     link, aes_key = parts
             
-            success = await download_m3u8(link, mp4_path, base_url)
+            # If URL is mkv, download as mkv then convert to mp4 for Telegram
+            _raw_path = link.split('?')[0].lower()
+            _is_mkv = _raw_path.endswith('.mkv')
+            _dl_path = mp4_path.replace('.mp4', '.mkv') if _is_mkv else mp4_path
+            success = await download_m3u8(link, _dl_path, base_url)
+            # Convert mkv to mp4 using ffmpeg (remux, no re-encode - fast)
+            if success and _is_mkv and os.path.exists(_dl_path):
+                await prog_msg.edit_text(f"⏳ **Converting to MP4...**\n`{name}`")
+                try:
+                    import subprocess
+                    result = await asyncio.to_thread(
+                        subprocess.check_output,
+                        ["ffmpeg", "-y", "-i", _dl_path, "-c", "copy", mp4_path],
+                        stderr=subprocess.STDOUT
+                    )
+                    if os.path.exists(_dl_path):
+                        os.remove(_dl_path)
+                except Exception as _ffmpeg_err:
+                    print(f"FFmpeg convert error: {_ffmpeg_err}")
+                    # Fallback: just rename
+                    if os.path.exists(_dl_path):
+                        os.rename(_dl_path, mp4_path)
+            elif _is_mkv and os.path.exists(_dl_path) and not os.path.exists(mp4_path):
+                os.rename(_dl_path, mp4_path)
             
             if success and aes_key and os.path.exists(mp4_path):
                 await prog_msg.edit_text(f"⏳ **Decrypting Video...**\n`{name}`")
