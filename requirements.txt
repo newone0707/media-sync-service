@@ -9,3 +9,4 @@ aiohttp
 aiofiles
 curl_cffi
 tgcrypto
+static-ffmpeg
