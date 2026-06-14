@@ -100,14 +100,13 @@ async def download_m3u8(url, output_path, base_url, user_id=None):
                 headers['app-version'] = '1.4.65.3'
         except:
             pass
-    elif "appx" in url or "encrypted" in url:
+    elif "appx" in url or "classx" in url or "akamai" in url or "encrypted" in url:
         headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        if "appx" in referer:
-            headers['Referer'] = referer
-            headers['Origin'] = referer
+        headers['Referer'] = referer
+        headers['Origin'] = referer.rstrip('/')
 
-    if "encrypted.mkv" in url or "encrypted.mp4" in url or ".zip" in url or "appx" in url:
-        # Download directly via requests for direct files (in background thread)
+    if "encrypted.mkv" in url or "encrypted.mp4" in url or ".zip" in url or "appx" in url or "classx" in url or "akamai" in url:
+        # Download directly via curl_cffi Chrome impersonation (works for AppX/ClassX CDN)
         return await asyncio.to_thread(sync_download, url, output_path, referer)
     
     if "classplus" in url and "token=" in url:
