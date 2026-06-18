@@ -1,4 +1,13 @@
-Flask
-requests
+pyrogram==2.0.106
+requests==2.31.0
 yt-dlp
+Flask
 gunicorn
+Werkzeug==3.0.0
+python-dotenv==1.0.0
+pycryptodome==3.19.0
+aiohttp
+aiofiles
+curl_cffi
+tgcrypto
+static-ffmpeg
