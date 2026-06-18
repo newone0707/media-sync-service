@@ -234,7 +234,6 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
         return await asyncio.to_thread(sync_classplus_dl)
 
     ydl_opts = {
-        'format': 'best',
         'outtmpl': output_path,
         'quiet': False,
         'no_warnings': False,
@@ -382,8 +381,14 @@ async def handle_document(client: Client, message: Message):
         link = item["link"]
         prog_msg = await message.reply_text(f"⏳ **Processing {i+1}/{len(links_to_upload)}:**\n`{name}`")
         
-        # Detect by actual file extension in the URL path (before query string)
-        _link_path = link.split("?")[0].lower()
+        # Token & AES Key extraction must happen first so we can check the real extension
+        aes_key = None
+        spayee_token = None
+        
+        # Clean the link for extension detection
+        clean_link = link.split("*")[0] if "*" in link else link
+        _link_path = clean_link.split("?")[0].lower()
+        
         if _link_path.endswith(".pdf") or "pdf" in name.lower():
             # Download PDF
             await prog_msg.edit_text(f"⏳ **Downloading PDF:**\n`{name}`")
@@ -391,10 +396,7 @@ async def handle_document(client: Client, message: Message):
             import re
             pdf_path = re.sub(r'[\\/*?:"<>|]', '_', pdf_path) # sanitize
             
-            # Token & AES Key extraction
-            aes_key = None
-            spayee_token = None
-            is_appx = "appx" in link or "classx" in link or "akamai" in link or "encrypted" in link
+            is_appx = "appx" in clean_link or "classx" in clean_link or "akamai" in clean_link or "encrypted" in clean_link
             
             if "*" in link:
                 star_parts = link.split("*", 1)
@@ -475,7 +477,7 @@ async def handle_document(client: Client, message: Message):
             # Token & AES Key extraction
             aes_key = None
             spayee_token = None
-            is_appx = "appx" in link or "classx" in link or "akamai" in link or "encrypted" in link
+            is_appx = "appx" in clean_link or "classx" in clean_link or "akamai" in clean_link or "encrypted" in clean_link
             
             if "*" in link:
                 star_parts = link.split("*", 1)
