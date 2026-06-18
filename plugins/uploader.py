@@ -252,12 +252,11 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                 raw_url = url
                 _spayee_token = spayee_token
                 spayee_key_b64 = None
-                if '*' in raw_url:
-                    parts = raw_url.split('*')
-                    url = parts[0]
-                    _spayee_token = parts[1]
-                    if len(parts) > 2:
-                        spayee_key_b64 = parts[2]
+                if '*' in _spayee_token:
+                    parts = _spayee_token.split('*')
+                    _spayee_token = parts[0]
+                    if len(parts) > 1:
+                        spayee_key_b64 = parts[1]
                 
                 referer_origin = 'https://www.rglectures.com'
                 headers_spayee = {
@@ -352,29 +351,63 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                                 except: pass
                             
                             if not key_blobs_to_test:
+                                print(f"[Spayee] Fetching key blob from: {abs_uri[:80]}", flush=True)
                                 for _ in range(5):
                                     r_key = cffi_requests.get(abs_uri, headers=headers_spayee, impersonate="chrome")
                                     if len(r_key.content) == 64:
                                         key_blobs_to_test.append(r_key.content)
+                                        break
+
+                            # Sync byte check helper
+                            def verify_key(k):
+                                if not ts_blob or len(ts_blob) < 188:
+                                    return False
+                                try:
+                                    c = AES.new(k, AES.MODE_CBC, iv=iv)
+                                    d = c.decrypt(ts_blob[:304])
+                                    if len(d) >= 188 and d[0] == 0x47:
+                                        return True
+                                except:
+                                    pass
+                                return False
 
                             for key_blob in key_blobs_to_test:
                                 if decrypted_key: break
                                 if len(key_blob) != 64: continue
                                 
-                                for k_off in range(49):
-                                    if decrypted_key: break
-                                    for p_off in range(len(p_bytes) - 15):
+                                # 1. Try plain slices
+                                for offset in range(len(key_blob) - 15):
+                                    k = key_blob[offset:offset+16]
+                                    if verify_key(k):
+                                        decrypted_key = k
+                                        print(f"[Spayee] Decrypted key match at plain offset: {offset}", flush=True)
+                                        break
+                                        
+                                # 2. Try Token XOR
+                                if not decrypted_key:
+                                    t_bytes = _spayee_token.encode()
+                                    for k_off in range(len(key_blob) - 15):
                                         if decrypted_key: break
-                                        for e_off in range(len(e_bytes) - 15):
-                                            pe = bytes([a^b for a,b in zip(p_bytes[p_off:p_off+16], e_bytes[e_off:e_off+16])])
-                                            x = bytes([a^b for a,b in zip(key_blob[k_off:k_off+16], pe)])
-                                            try:
-                                                c = AES.new(x, AES.MODE_CBC, iv=iv)
-                                                d = c.decrypt(ts_blob[:944])
-                                                if len(d) >= 940 and d[0] == 0x47 and d[188] == 0x47 and d[376] == 0x47 and d[564] == 0x47 and d[752] == 0x47:
-                                                    decrypted_key = x
+                                        for t_off in range(len(t_bytes) - 15):
+                                            k = bytes([a ^ b for a, b in zip(key_blob[k_off:k_off+16], t_bytes[t_off:t_off+16])])
+                                            if verify_key(k):
+                                                decrypted_key = k
+                                                print(f"[Spayee] Decrypted key match at Token XOR: k={k_off}, t={t_off}", flush=True)
+                                                break
+                                                
+                                # 3. Try p/e XOR
+                                if not decrypted_key and p_bytes and e_bytes:
+                                    for k_off in range(len(key_blob) - 15):
+                                        if decrypted_key: break
+                                        for p_off in range(len(p_bytes) - 15):
+                                            if decrypted_key: break
+                                            for e_off in range(len(e_bytes) - 15):
+                                                pe = bytes([a^b for a,b in zip(p_bytes[p_off:p_off+16], e_bytes[e_off:e_off+16])])
+                                                k = bytes([a^b for a,b in zip(key_blob[k_off:k_off+16], pe)])
+                                                if verify_key(k):
+                                                    decrypted_key = k
+                                                    print(f"[Spayee] Decrypted key match at p/e XOR: k={k_off}, p={p_off}, e={e_off}", flush=True)
                                                     break
-                                            except: pass
 
                             if decrypted_key:
                                 with open(local_key_path, "wb") as f:
@@ -405,7 +438,7 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                 import subprocess
                 ffmpeg_cmd = [
                     'ffmpeg', '-y',
-                    '-headers', f"Authorization: Bearer {spayee_token}\r\nCookie: c_ujwt={spayee_token}; jwt={spayee_token}\r\nUser-Agent: Mozilla/5.0\r\n",
+                    '-headers', f"Authorization: Bearer {_spayee_token}\r\nCookie: c_ujwt={_spayee_token}; jwt={_spayee_token}\r\nUser-Agent: Mozilla/5.0\r\n",
                     '-allowed_extensions', 'ALL',
                     '-protocol_whitelist', 'file,http,https,tcp,tls,crypto',
                     '-i', local_m3u8,
