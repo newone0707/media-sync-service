@@ -392,7 +392,8 @@ async def handle_document(client: Client, message: Message):
         clean_link = link.split("*")[0] if "*" in link else link
         _link_path = clean_link.split("?")[0].lower()
         
-        if _link_path.endswith(".pdf") or "pdf" in name.lower():
+        is_video = any(ext in _link_path for ext in [".m3u8", ".mp4", ".mkv", "youtube.com", "youtu.be"])
+        if _link_path.endswith(".pdf") or (not is_video and "pdf" in name.lower()):
             # Download PDF
             await prog_msg.edit_text(f"⏳ **Downloading PDF:**\n`{name}`")
             pdf_path = f"{name}.pdf"
