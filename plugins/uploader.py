@@ -238,7 +238,8 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
         'quiet': False,
         'no_warnings': False,
         'http_headers': headers,
-        'abort_on_error': False
+        'abort_on_error': False,
+        'impersonate': 'chrome'
     }
     
     # Try getting ffmpeg path safely in case it's an m3u8 stream
@@ -479,8 +480,8 @@ async def handle_document(client: Client, message: Message):
             spayee_token = None
             is_appx = "appx" in clean_link or "classx" in clean_link or "akamai" in clean_link or "encrypted" in clean_link
             
-            if "*" in link:
-                star_parts = link.split("*", 1)
+            if "*" in clean_link:
+                star_parts = clean_link.split("*", 1)
                 link = star_parts[0]
                 if is_appx:
                     aes_key = star_parts[1]
