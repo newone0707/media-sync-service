@@ -343,6 +343,7 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                                 print(f"[Spayee] Failed to parse JWT claims: {err}", flush=True)
 
                             decrypted_key = None
+                            key_blob = None
                             key_blobs_to_test = []
                             if spayee_key_b64:
                                 try:
@@ -354,6 +355,8 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                                 print(f"[Spayee] Fetching key blob from: {abs_uri[:80]}", flush=True)
                                 for _ in range(5):
                                     r_key = cffi_requests.get(abs_uri, headers=headers_spayee, impersonate="chrome")
+                                    if r_key.status_code != 200:
+                                        print(f"[Spayee] Key fetch returned status: {r_key.status_code}", flush=True)
                                     if len(r_key.content) == 64:
                                         key_blobs_to_test.append(r_key.content)
                                         break
@@ -413,7 +416,7 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                                 with open(local_key_path, "wb") as f:
                                     f.write(decrypted_key)
                                 line = line.replace(f'URI="{uri}"', f'URI="{os.path.basename(local_key_path)}"')
-                            elif len(key_blob) == 64:
+                            elif key_blob and len(key_blob) == 64:
                                 print(f"[Spayee] Brute-force failed - passing key URL directly to ffmpeg", flush=True)
                                 line = line.replace(f'URI="{uri}"', f'URI="{abs_uri}"')
                                 # Unobfuscated 16-byte key - write directly
@@ -422,7 +425,7 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                                     f.write(key_blob)
                                 line = line.replace(f'URI="{uri}"', f'URI="{os.path.basename(local_key_path)}"')
                             else:
-                                print(f"[Spayee] Unexpected key_blob len={len(key_blob)}, passing URL to ffmpeg", flush=True)
+                                print(f"[Spayee] Key blob not available or invalid, passing URL to ffmpeg", flush=True)
                                 line = line.replace(f'URI="{uri}"', f'URI="{abs_uri}"')
                         new_lines.append(line)
                     elif line and not line.startswith("#"):
