@@ -42,9 +42,10 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
         'device-id': '39F093FF35F201D9'
     }
     
-    if spayee_token:
+    if spayee_token and spayee_token != 'NO_TOKEN':
         headers['Authorization'] = f'Bearer {spayee_token}'
         headers['X-Auth-Token'] = spayee_token
+        headers['Cookie'] = f'c_ujwt={spayee_token}; jwt={spayee_token}'
     
     if user_id and user_id in user_tokens:
         cp_token = user_tokens[user_id]
