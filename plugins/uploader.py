@@ -214,15 +214,22 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                 with open(local_m3u8, "w") as f:
                     f.write("\n".join(new_lines))
                     
-                ydl_opts_local = {
-                    'format': 'best',
-                    'outtmpl': output_path,
-                    'quiet': False,
-                    'no_warnings': False,
-                    'http_headers': headers
-                }
-                with yt_dlp.YoutubeDL(ydl_opts_local) as ydl:
-                    ret = ydl.download([local_m3u8])
+                import subprocess
+                ffmpeg_cmd = [
+                    'ffmpeg', '-y',
+                    '-headers', "".join([f"{k}: {v}\r\n" for k, v in headers.items()]),
+                    '-allowed_extensions', 'ALL',
+                    '-protocol_whitelist', 'file,http,https,tcp,tls,crypto',
+                    '-i', local_m3u8,
+                    '-c', 'copy',
+                    output_path
+                ]
+                
+                try:
+                    subprocess.run(ffmpeg_cmd, check=True)
+                    ret = 0
+                except subprocess.CalledProcessError:
+                    ret = 1
                     
                 if os.path.exists(local_m3u8):
                     os.remove(local_m3u8)
@@ -233,6 +240,194 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                 print(f"Classplus Custom DL Error:\n{traceback.format_exc()}")
                 return False
         return await asyncio.to_thread(sync_classplus_dl)
+
+    if spayee_token and spayee_token != 'NO_TOKEN':
+        def sync_spayee_dl():
+            try:
+                import re
+                import os
+                import urllib.parse
+                from curl_cffi import requests as cffi_requests
+                
+                raw_url = url
+                _spayee_token = spayee_token
+                spayee_key_b64 = None
+                if '*' in raw_url:
+                    parts = raw_url.split('*')
+                    url = parts[0]
+                    _spayee_token = parts[1]
+                    if len(parts) > 2:
+                        spayee_key_b64 = parts[2]
+                
+                referer_origin = 'https://www.rglectures.com'
+                headers_spayee = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                    'Authorization': f'Bearer {_spayee_token}',
+                    'Cookie': f'c_ujwt={_spayee_token}; jwt={_spayee_token}',
+                    'Referer': referer_origin + '/',
+                    'Origin': referer_origin,
+                }
+                
+                r = cffi_requests.get(url, headers=headers_spayee, impersonate='chrome')
+                if r.status_code != 200:
+                    print(f"Spayee Master M3U8 Error: {r.status_code}")
+                    return False
+                    
+                master_text = r.text
+                base_url_hls = url.split("?")[0].rsplit("/", 1)[0] + "/"
+                
+                max_bw = 0
+                best_res_url = None
+                lines = master_text.splitlines()
+                for j, line in enumerate(lines):
+                    if line.startswith("#EXT-X-STREAM-INF"):
+                        bw_match = re.search(r'BANDWIDTH=(\d+)', line)
+                        bw = int(bw_match.group(1)) if bw_match else 0
+                        if bw >= max_bw:
+                            max_bw = bw
+                            best_res_url = lines[j+1].strip()
+                            
+                if best_res_url:
+                    if not best_res_url.startswith("http"):
+                        best_res_url = urllib.parse.urljoin(base_url_hls, best_res_url)
+                    r2 = cffi_requests.get(best_res_url, headers=headers_spayee, impersonate='chrome')
+                    sub_text = r2.text
+                    base_url_hls = best_res_url.split("?")[0].rsplit("/", 1)[0] + "/"
+                else:
+                    sub_text = master_text
+                    
+                import uuid
+                from Crypto.Cipher import AES
+                rand_id = uuid.uuid4().hex
+                new_lines = []
+                local_key_path = f"spayee_{rand_id}.key"
+                
+                # Pre-fetch the first TS segment and the IV for brute-forcing
+                first_ts_url = None
+                iv_hex = None
+                for line in sub_text.splitlines():
+                    if line.startswith("#EXT-X-KEY"):
+                        iv_match = re.search(r'IV=0x([0-9a-fA-F]+)', line)
+                        if iv_match:
+                            iv_hex = iv_match.group(1)
+                    elif line and not line.startswith("#"):
+                        first_ts_url = urllib.parse.urljoin(base_url_hls, line) if not line.startswith("http") else line
+                        break
+                
+                for line in sub_text.splitlines():
+                    if line.startswith("#EXT-X-KEY"):
+                        uri_match = re.search(r'URI="([^"]+)"', line)
+                        if uri_match:
+                            uri = uri_match.group(1)
+                            abs_uri = urllib.parse.urljoin(base_url_hls, uri) if not uri.startswith("http") else uri
+                            
+                            # Fetch TS for validation
+                            r_ts = cffi_requests.get(first_ts_url, headers=headers_spayee, impersonate="chrome")
+                            ts_blob = r_ts.content[:1024]
+                            iv = bytes.fromhex(iv_hex) if iv_hex else b'\x00'*16
+                            
+                            # Extract JWT claims for Spayee's 3-part XOR derivation
+                            p_bytes, e_bytes = b'', b''
+                            try:
+                                import json, base64
+                                payload_b64 = _spayee_token.split('.')[1]
+                                pad = len(payload_b64) % 4
+                                if pad: payload_b64 += '=' * (4 - pad)
+                                payload = json.loads(base64.b64decode(payload_b64).decode())
+                                def safe_b64decode(s):
+                                    pad = len(s) % 4
+                                    if pad: s += '=' * (4 - pad)
+                                    return base64.b64decode(s)
+                                p_bytes = safe_b64decode(payload.get('p', ''))
+                                e_bytes = safe_b64decode(payload.get('e', ''))
+                            except Exception as err:
+                                print(f"[Spayee] Failed to parse JWT claims: {err}", flush=True)
+
+                            decrypted_key = None
+                            key_blobs_to_test = []
+                            if spayee_key_b64:
+                                try:
+                                    import base64
+                                    key_blobs_to_test.append(base64.b64decode(spayee_key_b64))
+                                except: pass
+                            
+                            if not key_blobs_to_test:
+                                for _ in range(5):
+                                    r_key = cffi_requests.get(abs_uri, headers=headers_spayee, impersonate="chrome")
+                                    if len(r_key.content) == 64:
+                                        key_blobs_to_test.append(r_key.content)
+
+                            for key_blob in key_blobs_to_test:
+                                if decrypted_key: break
+                                if len(key_blob) != 64: continue
+                                
+                                for k_off in range(49):
+                                    if decrypted_key: break
+                                    for p_off in range(len(p_bytes) - 15):
+                                        if decrypted_key: break
+                                        for e_off in range(len(e_bytes) - 15):
+                                            pe = bytes([a^b for a,b in zip(p_bytes[p_off:p_off+16], e_bytes[e_off:e_off+16])])
+                                            x = bytes([a^b for a,b in zip(key_blob[k_off:k_off+16], pe)])
+                                            try:
+                                                c = AES.new(x, AES.MODE_CBC, iv=iv)
+                                                d = c.decrypt(ts_blob[:944])
+                                                if len(d) >= 940 and d[0] == 0x47 and d[188] == 0x47 and d[376] == 0x47 and d[564] == 0x47 and d[752] == 0x47:
+                                                    decrypted_key = x
+                                                    break
+                                            except: pass
+
+                            if decrypted_key:
+                                with open(local_key_path, "wb") as f:
+                                    f.write(decrypted_key)
+                                line = line.replace(f'URI="{uri}"', f'URI="{os.path.basename(local_key_path)}"')
+                            elif len(key_blob) == 64:
+                                print(f"[Spayee] Brute-force failed - passing key URL directly to ffmpeg", flush=True)
+                                line = line.replace(f'URI="{uri}"', f'URI="{abs_uri}"')
+                                # Unobfuscated 16-byte key - write directly
+                                print(f"[Spayee] Direct 16-byte key found", flush=True)
+                                with open(local_key_path, "wb") as f:
+                                    f.write(key_blob)
+                                line = line.replace(f'URI="{uri}"', f'URI="{os.path.basename(local_key_path)}"')
+                            else:
+                                print(f"[Spayee] Unexpected key_blob len={len(key_blob)}, passing URL to ffmpeg", flush=True)
+                                line = line.replace(f'URI="{uri}"', f'URI="{abs_uri}"')
+                        new_lines.append(line)
+                    elif line and not line.startswith("#"):
+                        abs_line = urllib.parse.urljoin(base_url_hls, line) if not line.startswith("http") else line
+                        new_lines.append(abs_line)
+                    else:
+                        new_lines.append(line)
+                        
+                local_m3u8 = f"spayee_{rand_id}.m3u8"
+                with open(local_m3u8, "w", encoding='utf-8') as f:
+                    f.write("\n".join(new_lines))
+                    
+                import subprocess
+                ffmpeg_cmd = [
+                    'ffmpeg', '-y',
+                    '-headers', f"Authorization: Bearer {spayee_token}\r\nCookie: c_ujwt={spayee_token}; jwt={spayee_token}\r\nUser-Agent: Mozilla/5.0\r\n",
+                    '-allowed_extensions', 'ALL',
+                    '-protocol_whitelist', 'file,http,https,tcp,tls,crypto',
+                    '-i', local_m3u8,
+                    '-c', 'copy',
+                    output_path
+                ]
+                
+                try:
+                    subprocess.run(ffmpeg_cmd, check=True)
+                    ret = 0
+                except subprocess.CalledProcessError:
+                    ret = 1
+                    
+                if os.path.exists(local_m3u8): os.remove(local_m3u8)
+                if os.path.exists(local_key_path): os.remove(local_key_path)
+                    
+                return ret == 0
+            except Exception as e:
+                import traceback
+                print(f"Spayee Custom DL Error:\\n{traceback.format_exc()}")
+                return False
+        return await asyncio.to_thread(sync_spayee_dl)
 
     from yt_dlp.networking.impersonate import ImpersonateTarget
     ydl_opts = {
@@ -428,6 +623,9 @@ async def handle_document(client: Client, message: Message):
                     if _token:
                         h['Authorization'] = f'Bearer {_token}'
                         h['X-Auth-Token'] = _token
+                        h['Cookie'] = f'c_ujwt={_token}; jwt={_token}'
+                        h['Referer'] = _referer
+                        h['Origin'] = _referer.rstrip('/')
                         
                     r = cffi_requests.get(actual_link, stream=True, headers=h, impersonate="chrome")
                     r.raise_for_status()
