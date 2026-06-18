@@ -654,9 +654,10 @@ async def handle_document(client: Client, message: Message):
                         h['Origin'] = _referer.rstrip('/')
                     
                     if _token:
-                        h['Authorization'] = f'Bearer {_token}'
-                        h['X-Auth-Token'] = _token
-                        h['Cookie'] = f'c_ujwt={_token}; jwt={_token}'
+                        _clean_token = _token.split('*')[0] if '*' in _token else _token
+                        h['Authorization'] = f'Bearer {_clean_token}'
+                        h['X-Auth-Token'] = _clean_token
+                        h['Cookie'] = f'c_ujwt={_clean_token}; jwt={_clean_token}'
                         h['Referer'] = _referer
                         h['Origin'] = _referer.rstrip('/')
                         
