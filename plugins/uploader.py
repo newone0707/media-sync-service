@@ -340,7 +340,7 @@ async def handle_document(client: Client, message: Message):
     raw_base_url = "https://web.classplusapp.com"
     for line in lines:
         line = line.strip()
-        if not line or line.startswith("Course:"):
+        if not line or line.startswith("Course:") or line.startswith("URL:"):
             continue
         if line.startswith("BaseURL:"):
             raw_base_url = line.split("BaseURL:")[1].strip()
