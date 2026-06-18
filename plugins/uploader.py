@@ -233,13 +233,14 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                 return False
         return await asyncio.to_thread(sync_classplus_dl)
 
+    from yt_dlp.networking.impersonate import ImpersonateTarget
     ydl_opts = {
         'outtmpl': output_path,
         'quiet': False,
         'no_warnings': False,
         'http_headers': headers,
         'abort_on_error': False,
-        'impersonate': 'chrome'
+        'impersonate': ImpersonateTarget(client='chrome')
     }
     
     # Try getting ffmpeg path safely in case it's an m3u8 stream
