@@ -349,7 +349,7 @@ async def handle_document(client: Client, message: Message):
         if _re.match(r'^(Home\s*>.*>\s*)?Video:\s*[A-Za-z0-9+/]{20}', line):
             continue
         if ": " in line:
-            name, link = line.split(": ", 1)
+            name, link = line.rsplit(": ", 1)
             if link.startswith("http"):
                 links_to_upload.append({"name": name.strip(), "link": link.strip()})
         elif line.startswith("http"):
