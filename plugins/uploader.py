@@ -31,7 +31,7 @@ def sync_download(url, output_path, referer):
         print(f"Direct Download Error: {e}")
         return False
 
-async def download_m3u8(url, output_path, base_url, user_id=None):
+async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=None):
     print(f"Downloading URL: {url}")
     referer = base_url if base_url.endswith('/') else base_url + '/'
     
@@ -41,6 +41,10 @@ async def download_m3u8(url, output_path, base_url, user_id=None):
         'Origin': referer,
         'device-id': '39F093FF35F201D9'
     }
+    
+    if spayee_token:
+        headers['Authorization'] = f'Bearer {spayee_token}'
+        headers['X-Auth-Token'] = spayee_token
     
     if user_id and user_id in user_tokens:
         cp_token = user_tokens[user_id]
@@ -234,8 +238,16 @@ async def download_m3u8(url, output_path, base_url, user_id=None):
         'outtmpl': output_path,
         'quiet': False,
         'no_warnings': False,
-        'http_headers': headers
+        'http_headers': headers,
+        'abort_on_error': False
     }
+    
+    # Try getting ffmpeg path safely in case it's an m3u8 stream
+    import shutil
+    ffmpeg_path = shutil.which('ffmpeg')
+    if ffmpeg_path:
+        ydl_opts['ffmpeg_location'] = ffmpeg_path
+        
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ret = ydl.download([url])
@@ -379,27 +391,38 @@ async def handle_document(client: Client, message: Message):
             import re
             pdf_path = re.sub(r'[\\/*?:"<>|]', '_', pdf_path) # sanitize
             
-            # AES key extraction: check * FIRST (format is URL*KEY:IV)
+            # Token & AES Key extraction
             aes_key = None
+            spayee_token = None
+            is_appx = "appx" in link or "classx" in link or "akamai" in link or "encrypted" in link
+            
             if "*" in link:
                 star_parts = link.split("*", 1)
                 link = star_parts[0]
-                aes_key = star_parts[1]
+                if is_appx:
+                    aes_key = star_parts[1]
+                else:
+                    spayee_token = star_parts[1]
             elif ":Zm" in link or ":" in link.split("/")[-1]:
                 parts = link.rsplit(":", 1)
                 if len(parts) == 2 and len(parts[1]) > 10 and "=" in parts[1]:
                     link, aes_key = parts
 
-            def sync_pdf_dl(actual_link, _pdf_path, _referer):
+            def sync_pdf_dl(actual_link, _pdf_path, _referer, _token=None):
                 try:
-                    h = {'User-Agent': 'Mozilla/5.0', 'device-id': '39F093FF35F201D9'}
+                    h = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'device-id': '39F093FF35F201D9'}
                     if "token=" in actual_link:
-                        _token = actual_link.split("token=")[1].split("&")[0]
-                        h['x-access-token'] = _token
+                        _t = actual_link.split("token=")[1].split("&")[0]
+                        h['x-access-token'] = _t
                         h['api-version'] = "18"
-                    elif "appx" in actual_link or "classx" in actual_link or "akamai" in actual_link:
+                    elif is_appx:
                         h['Referer'] = _referer
                         h['Origin'] = _referer.rstrip('/')
+                    
+                    if _token:
+                        h['Authorization'] = f'Bearer {_token}'
+                        h['X-Auth-Token'] = _token
+                        
                     r = cffi_requests.get(actual_link, stream=True, headers=h, impersonate="chrome")
                     r.raise_for_status()
                     with open(_pdf_path, 'wb') as f:
@@ -411,7 +434,7 @@ async def handle_document(client: Client, message: Message):
                         debug_f.write(f"PDF Download Error: {e}\n")
                     print(f"PDF Download Error: {e}")
                     return False
-            success = await asyncio.to_thread(sync_pdf_dl, link, pdf_path, base_url)
+            success = await asyncio.to_thread(sync_pdf_dl, link, pdf_path, base_url, spayee_token)
             
             if success and aes_key and os.path.exists(pdf_path):
                 decrypted = decrypt_file(pdf_path, aes_key)
@@ -449,12 +472,18 @@ async def handle_document(client: Client, message: Message):
             mp4_path = f"{name}.mp4"
             mp4_path = re.sub(r'[\\/*?:"<>|]', '_', mp4_path)
             
-            # AES key extraction: check * FIRST (format is URL*KEY:IV)
+            # Token & AES Key extraction
             aes_key = None
+            spayee_token = None
+            is_appx = "appx" in link or "classx" in link or "akamai" in link or "encrypted" in link
+            
             if "*" in link:
                 star_parts = link.split("*", 1)
                 link = star_parts[0]
-                aes_key = star_parts[1]
+                if is_appx:
+                    aes_key = star_parts[1]
+                else:
+                    spayee_token = star_parts[1]
             elif ":Zm" in link or ":" in link.split("/")[-1]:
                 parts = link.rsplit(":", 1)
                 if len(parts) == 2 and len(parts[1]) > 10 and "=" in parts[1]:
@@ -464,7 +493,7 @@ async def handle_document(client: Client, message: Message):
             _raw_path = link.split('?')[0].lower()
             _is_mkv = _raw_path.endswith('.mkv')
             _dl_path = mp4_path.replace('.mp4', '.mkv') if _is_mkv else mp4_path
-            success = await download_m3u8(link, _dl_path, base_url)
+            success = await download_m3u8(link, _dl_path, base_url, user_id=user_id, spayee_token=spayee_token)
             # Convert mkv to mp4 using ffmpeg (remux, no re-encode - fast)
             if success and _is_mkv and os.path.exists(_dl_path):
                 await prog_msg.edit_text(f"⏳ **Converting to MP4...**\n`{name}`")
