@@ -877,7 +877,15 @@ async def handle_text_messages(client: Client, message: Message):
             
             buttons = []
             for c in courses:
-                buttons.append([InlineKeyboardButton(c['title'][:40], callback_data=f"spcourse_{c['id']}")])
+                cid = c.get('course_id', c['id'])
+                # Telegram callback_data limit is 64 bytes.
+                if len(cid) > 40:
+                    # In case cid is a full url
+                    import re
+                    m = re.search(r'([a-f0-9]{24})', cid)
+                    if m:
+                        cid = m.group(1)
+                buttons.append([InlineKeyboardButton(c['title'][:40], callback_data=f"spcourse_{cid}")])
             
             buttons.append([InlineKeyboardButton("❌ Cancel", callback_data="menu_platforms")])
             
