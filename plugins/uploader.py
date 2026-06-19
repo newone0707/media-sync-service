@@ -253,13 +253,15 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                 raw_url = url
                 _spayee_token = spayee_token
                 spayee_key_b64 = None
+                referer_origin = 'https://www.rglectures.com'
                 if '*' in _spayee_token:
                     parts = _spayee_token.split('*')
                     _spayee_token = parts[0]
                     if len(parts) > 1:
                         spayee_key_b64 = parts[1]
+                    if len(parts) > 2:
+                        referer_origin = parts[2]
                 
-                referer_origin = 'https://www.rglectures.com'
                 base_url_hls = url.split("?")[0].rsplit("/", 1)[0] + "/"
                 headers_spayee = {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
