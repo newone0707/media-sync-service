@@ -456,15 +456,25 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                 ]
                 
                 try:
-                    subprocess.run(ffmpeg_cmd, check=True)
-                    ret = 0
-                except subprocess.CalledProcessError:
+                    res = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+                    if res.returncode != 0:
+                        ret = 1
+                        err_text = res.stderr[-800:] if res.stderr else "Unknown FFMPEG Error"
+                        print(f"FFMPEG ERROR: {err_text}", flush=True)
+                        error_msg = f"FFMPEG Error:\n{err_text}"
+                    else:
+                        ret = 0
+                        error_msg = None
+                except Exception as ex:
                     ret = 1
+                    error_msg = f"Subprocess Error: {str(ex)}"
                     
                 if os.path.exists(local_m3u8): os.remove(local_m3u8)
                 if os.path.exists(local_key_path): os.remove(local_key_path)
                     
-                return ret == 0
+                if ret != 0:
+                    return error_msg
+                return True
             except Exception as e:
                 import traceback
                 print(f"Spayee Custom DL Error:\\n{traceback.format_exc()}")
@@ -670,19 +680,23 @@ async def handle_document(client: Client, message: Message):
                         h['Referer'] = _referer
                         h['Origin'] = _referer.rstrip('/')
                         
-                    r = cffi_requests.get(actual_link, stream=True, headers=h, impersonate="chrome")
-                    r.raise_for_status()
-                    with open(_pdf_path, 'wb') as f:
-                        for chunk in r.iter_content(chunk_size=65536):
-                            f.write(chunk)
-                    return True
+                    _r = cffi_requests.get(actual_link, headers=h, impersonate='chrome', timeout=300)
+                    if _r.status_code == 200:
+                        with open(_pdf_path, 'wb') as f:
+                            f.write(_r.content)
+                        return True
+                    else:
+                        return f"HTTP {_r.status_code}: {_r.content[:100]}"
                 except Exception as e:
-                    with open('debug.log', 'a') as debug_f:
-                        debug_f.write(f"PDF Download Error: {e}\n")
-                    print(f"PDF Download Error: {e}")
-                    return False
+                    return f"PDF Download Error: {str(e)}"
             success = await asyncio.to_thread(sync_pdf_dl, link, pdf_path, base_url, spayee_token)
             
+            if success is not True:
+                err_str = success if isinstance(success, str) else "Unknown PDF Download Error"
+                await prog_msg.edit_text(f"❌ **Download Failed!**\n`{err_str}`")
+                if os.path.exists(pdf_path): os.remove(pdf_path)
+                continue
+
             if success and aes_key and os.path.exists(pdf_path):
                 decrypted = decrypt_file(pdf_path, aes_key)
                 if not decrypted:
