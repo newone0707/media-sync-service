@@ -181,7 +181,7 @@ class SpayeeClient:
                         # Construct link with ID appended so extract_links can use it
                         course_id = item.get("_id")
                         link = f"{self.domain_url}/s/store/courses/description/{course_url_slug}?id={course_id}"
-                        unique.append({"id": link, "title": title})
+                        unique.append({"id": link, "title": title, "course_id": course_id})
                     
                     if not unique:
                         return {"success": False, "error": "No enrolled courses found in API response."}
