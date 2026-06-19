@@ -11,6 +11,7 @@ from utils import progress_bar, decrypt_file
 # Global state to track uploads and stop requests
 upload_states = {}
 user_tokens = {}
+spayee_clients = {}
 
 import asyncio
 
@@ -825,3 +826,60 @@ async def handle_document(client: Client, message: Message):
 
     state["is_uploading"] = False
     await message.reply_text(f"✅ **Finished! Successfully processed {uploaded_count} files.**")
+
+@Client.on_message(filters.text & filters.private)
+async def handle_text_messages(client: Client, message: Message):
+    from bot_state import get_state, clear_state
+    user_id = message.from_user.id
+    state = get_state(user_id)
+    
+    if state == "WAITING_FOR_SPAYEE_CREDS":
+        text = message.text.strip()
+        if " " not in text or "*" not in text:
+            await message.reply_text("❌ **Invalid Format!**\nPlease use: `[API_URL] [EMAIL]*[PASSWORD]`")
+            return
+            
+        parts = text.split(" ", 1)
+        domain_url = parts[0].strip()
+        creds = parts[1].strip()
+        email, pwd = creds.split("*", 1)
+        
+        status_msg = await message.reply_text("⏳ **Authenticating with Ganitank / Spayee...**")
+        
+        from plugins.extractors.spayee_api import SpayeeClient
+        spayee_client = SpayeeClient(domain_url, email, pwd)
+        
+        # We need an async function to run the sync/async hybrid login
+        import asyncio
+        from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        
+        try:
+            # Login and fetch courses
+            courses = await asyncio.wait_for(spayee_client.fetch_courses(), timeout=45)
+            
+            if not courses:
+                await status_msg.edit_text("❌ **No enrolled courses found or Authentication Failed!**")
+                clear_state(user_id)
+                return
+                
+            # Keep client in user_tokens for later extraction
+            if "spayee_clients" not in globals():
+                global spayee_clients
+                spayee_clients = {}
+            spayee_clients[user_id] = spayee_client
+            
+            buttons = []
+            for c in courses:
+                buttons.append([InlineKeyboardButton(c['title'][:40], callback_data=f"spcourse_{c['id']}")])
+            
+            buttons.append([InlineKeyboardButton("❌ Cancel", callback_data="menu_platforms")])
+            
+            await status_msg.edit_text(
+                "✅ **Login Successful!**\n\n**Select a course to extract:**",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+            clear_state(user_id)
+            
+        except Exception as e:
+            await status_msg.edit_text(f"❌ **Login Error:**\n`{str(e)}`")
+            clear_state(user_id)
