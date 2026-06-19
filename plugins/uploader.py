@@ -345,6 +345,7 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                                 p_bytes = safe_b64decode(payload.get('p', ''))
                                 e_bytes = safe_b64decode(payload.get('e', ''))
                             except Exception as err:
+                                jwt_error = str(err)
                                 print(f"[Spayee] Failed to parse JWT claims: {err}", flush=True)
 
                             decrypted_key = None
@@ -373,7 +374,7 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                                 try:
                                     c = AES.new(k, AES.MODE_CBC, iv=iv)
                                     d = c.decrypt(ts_blob[:304])
-                                    if len(d) >= 188 and d[0] == 0x47:
+                                    if len(d) >= 188 and (d[0] == 0x47 or d.startswith(b"ID3")):
                                         return True
                                 except:
                                     pass
@@ -422,8 +423,8 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                                     f.write(decrypted_key)
                                 line = line.replace(f'URI="{uri}"', f'URI="{os.path.basename(local_key_path)}"')
                             elif key_blob and len(key_blob) == 64:
-                                print(f"[Spayee] Brute-force failed - passing key URL directly to ffmpeg", flush=True)
-                                line = line.replace(f'URI="{uri}"', f'URI="{abs_uri}"')
+                                debug_info = f"Spayee Decryption Failed!\nTS Status: {r_ts.status_code}\nTS Len: {len(ts_blob) if ts_blob else 0}\np:{len(p_bytes)} e:{len(e_bytes)} t:{len(t_bytes)}\nJWT Error: {jwt_error if 'jwt_error' in locals() else 'None'}"
+                                raise Exception(debug_info)
                             elif key_blob and len(key_blob) == 16:
                                 # Unobfuscated 16-byte key - write directly
                                 print(f"[Spayee] Direct 16-byte key found", flush=True)
@@ -431,8 +432,7 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                                     f.write(key_blob)
                                 line = line.replace(f'URI="{uri}"', f'URI="{os.path.basename(local_key_path)}"')
                             else:
-                                print(f"[Spayee] Key blob not available or invalid, passing URL to ffmpeg", flush=True)
-                                line = line.replace(f'URI="{uri}"', f'URI="{abs_uri}"')
+                                raise Exception("Key blob missing or invalid length.")
                         new_lines.append(line)
                     elif line and not line.startswith("#"):
                         abs_line = urllib.parse.urljoin(base_url_hls, line) if not line.startswith("http") else line
