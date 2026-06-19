@@ -447,7 +447,7 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                 import subprocess
                 ffmpeg_cmd = [
                     'ffmpeg', '-y',
-                    '-headers', f"Authorization: Bearer {_spayee_token}\r\nCookie: c_ujwt={_spayee_token}; jwt={_spayee_token}\r\nUser-Agent: Mozilla/5.0\r\nReferer: {base_url_hls}\r\n",
+                    '-headers', f"Authorization: Bearer {_spayee_token}\r\nCookie: c_ujwt={_spayee_token}; jwt={_spayee_token}\r\nUser-Agent: Mozilla/5.0\r\nReferer: {base_url_hls}\r\nOrigin: {referer_origin}\r\n",
                     '-allowed_extensions', 'ALL',
                     '-protocol_whitelist', 'file,http,https,tcp,tls,crypto',
                     '-i', local_m3u8,
@@ -841,7 +841,8 @@ async def handle_document(client: Client, message: Message):
                     if os.path.exists(mp4_path):
                         os.remove(mp4_path)
             else:
-                await prog_msg.edit_text(f"❌ **Failed to download Video:**\n`{name}`")
+                err_str = success if isinstance(success, str) else "Unknown Video Download Error"
+                await prog_msg.edit_text(f"❌ **Failed to download Video:**\n`{name}`\n\n**Error Details:**\n`{err_str}`")
 
     state["is_uploading"] = False
     await message.reply_text(f"✅ **Finished! Successfully processed {uploaded_count} files.**")
