@@ -334,11 +334,12 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                                 payload_b64 = _spayee_token.split('.')[1]
                                 pad = len(payload_b64) % 4
                                 if pad: payload_b64 += '=' * (4 - pad)
-                                payload = json.loads(base64.b64decode(payload_b64).decode())
+                                payload = json.loads(base64.urlsafe_b64decode(payload_b64).decode())
                                 def safe_b64decode(s):
+                                    if isinstance(s, str): s = s.encode()
                                     pad = len(s) % 4
-                                    if pad: s += '=' * (4 - pad)
-                                    return base64.b64decode(s)
+                                    if pad: s += b'=' * (4 - pad)
+                                    return base64.urlsafe_b64decode(s)
                                 p_bytes = safe_b64decode(payload.get('p', ''))
                                 e_bytes = safe_b64decode(payload.get('e', ''))
                             except Exception as err:
