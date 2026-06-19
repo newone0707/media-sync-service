@@ -274,8 +274,9 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                 
                 r = cffi_requests.get(url, headers=headers_spayee, impersonate='chrome')
                 if r.status_code != 200:
-                    print(f"Spayee Master M3U8 Error: {r.status_code}")
-                    return False
+                    err_msg = f"Spayee Master M3U8 Error: HTTP {r.status_code}\nThis usually means the link has EXPIRED. Please extract fresh links!"
+                    print(err_msg)
+                    return err_msg
                     
                 master_text = r.text
                 base_url_hls = url.split("?")[0].rsplit("/", 1)[0] + "/"
