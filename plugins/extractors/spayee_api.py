@@ -170,8 +170,8 @@ class SpayeeClient:
                         return {"success": False, "error": f"API returned {response.status}. Session expired or invalid cookies."}
                     data = await response.json()
                     
-                    if "data" not in data or "data" not in data["data"]:
-                        return {"success": False, "error": "Unexpected API response format."}
+                    if not isinstance(data, dict) or "data" not in data or "data" not in data.get("data", {}):
+                        return {"success": False, "error": f"Unexpected API response format: {str(data)[:100]}"}
                         
                     unique = []
                     for item in data["data"]["data"]:
@@ -196,9 +196,8 @@ class SpayeeClient:
         if not getattr(self, 'session_id', None):
             login_res = self._login_api()
             if not login_res.get("success"):
-                login_res = await self._login_playwright()
-                if not login_res.get("success"):
-                    print(f"Login failed before extraction: {login_res.get('error')}")
+                print(f"Login failed before extraction: {login_res.get('error')}")
+                return []
 
         self.total_videos = 0
         self.total_pdfs = 0
