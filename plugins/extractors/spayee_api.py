@@ -243,10 +243,11 @@ class SpayeeClient:
                         async with session.get(api_url, headers=headers) as resp:
                             if resp.status == 200:
                                 data = await resp.json()
-                                for item in data.get("data", {}).get("data", []):
-                                    if item.get("spayee:resource", {}).get("spayee:courseUrl") == slug:
-                                        course_obj_id = item.get("_id")
-                                        break
+                                if isinstance(data, dict):
+                                    for item in data.get("data", {}).get("data", []):
+                                        if item.get("spayee:resource", {}).get("spayee:courseUrl") == slug:
+                                            course_obj_id = item.get("_id")
+                                            break
                                         
                 if course_obj_id == course_id:
                     # failed to map
@@ -276,7 +277,7 @@ class SpayeeClient:
                         return []
                     toc_data = await resp.json()
                     
-                if "toc" not in toc_data:
+                if not isinstance(toc_data, dict) or "toc" not in toc_data:
                     return []
                     
                 formatted_links = []
@@ -303,6 +304,8 @@ class SpayeeClient:
                                         print('Session expired or invalid for Spayee, got HTML instead of JSON.')
                                         continue
                                     vdata = await vresp.json()
+                                    if not isinstance(vdata, dict):
+                                        continue
                                     resource = vdata.get("spayee:resource", {})
                                     stream_url = resource.get("spayee:streamUrl")
                                     if stream_url:
@@ -334,6 +337,8 @@ class SpayeeClient:
                                     if 'application/json' not in presp.headers.get('Content-Type', ''):
                                         continue
                                     pdata = await presp.json()
+                                    if not isinstance(pdata, dict):
+                                        continue
                                     pdf_url = pdata.get("url")
                                     if pdf_url:
                                         self.total_pdfs += 1
