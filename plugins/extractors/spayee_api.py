@@ -324,10 +324,8 @@ class SpayeeClient:
                                         except:
                                             pass
                                             
-                                        suffix = f"*{token_val}"
-                                        if key_b64:
-                                            suffix += f"*{key_b64}"
-                                        formatted_links.append(f"{full_title} : {stream_url}{suffix}")
+                                        # The format will be Title : URL*Token*Key*Domain
+                                        formatted_links.append(f"{full_title} : {stream_url}*{token_val}*{key_b64}*{self.domain_url}")
                         elif item_type == "pdf":
                             # Fetch PDF URL
                             await asyncio.sleep(1.5) # Rate limit protection
