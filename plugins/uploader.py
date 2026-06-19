@@ -260,11 +260,12 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                         spayee_key_b64 = parts[1]
                 
                 referer_origin = 'https://www.rglectures.com'
+                base_url_hls = url.split("?")[0].rsplit("/", 1)[0] + "/"
                 headers_spayee = {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
                     'Authorization': f'Bearer {_spayee_token}',
                     'Cookie': f'c_ujwt={_spayee_token}; jwt={_spayee_token}',
-                    'Referer': referer_origin + '/',
+                    'Referer': base_url_hls,
                     'Origin': referer_origin,
                 }
                 
@@ -358,7 +359,7 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                                     r_key = cffi_requests.get(abs_uri, headers=headers_spayee, impersonate="chrome")
                                     if r_key.status_code != 200:
                                         print(f"[Spayee] Key fetch returned status: {r_key.status_code}", flush=True)
-                                    if len(r_key.content) == 64:
+                                    if len(r_key.content) in (16, 64):
                                         key_blobs_to_test.append(r_key.content)
                                         break
 
@@ -420,6 +421,7 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                             elif key_blob and len(key_blob) == 64:
                                 print(f"[Spayee] Brute-force failed - passing key URL directly to ffmpeg", flush=True)
                                 line = line.replace(f'URI="{uri}"', f'URI="{abs_uri}"')
+                            elif key_blob and len(key_blob) == 16:
                                 # Unobfuscated 16-byte key - write directly
                                 print(f"[Spayee] Direct 16-byte key found", flush=True)
                                 with open(local_key_path, "wb") as f:
@@ -442,7 +444,7 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                 import subprocess
                 ffmpeg_cmd = [
                     'ffmpeg', '-y',
-                    '-headers', f"Authorization: Bearer {_spayee_token}\r\nCookie: c_ujwt={_spayee_token}; jwt={_spayee_token}\r\nUser-Agent: Mozilla/5.0\r\n",
+                    '-headers', f"Authorization: Bearer {_spayee_token}\r\nCookie: c_ujwt={_spayee_token}; jwt={_spayee_token}\r\nUser-Agent: Mozilla/5.0\r\nReferer: {base_url_hls}\r\n",
                     '-allowed_extensions', 'ALL',
                     '-protocol_whitelist', 'file,http,https,tcp,tls,crypto',
                     '-i', local_m3u8,
