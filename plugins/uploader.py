@@ -262,6 +262,7 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                     if len(parts) > 2:
                         referer_origin = parts[2]
                 
+                ts_urls = []
                 base_url_hls = url.split("?")[0].rsplit("/", 1)[0] + "/"
                 headers_spayee = {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -419,35 +420,72 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                                                     break
 
                             if decrypted_key:
-                                with open(local_key_path, "wb") as f:
+                                # We MUST save the key inside ts_dir so ffmpeg finds it!
+                                # Wait, we haven't created ts_dir yet! We'll just put it in the same directory and refer to it by absolute path!
+                                import tempfile
+                                key_abs_path = os.path.abspath(local_key_path)
+                                with open(key_abs_path, "wb") as f:
                                     f.write(decrypted_key)
-                                line = line.replace(f'URI="{uri}"', f'URI="{os.path.basename(local_key_path)}"')
+                                # Ffmpeg needs file:/// absolute paths for windows or just forward slashes
+                                key_uri = key_abs_path.replace('\\', '/')
+                                line = line.replace(f'URI="{uri}"', f'URI="{key_uri}"')
                             elif key_blob and len(key_blob) == 64:
                                 debug_info = f"Spayee Decryption Failed!\nTS Status: {r_ts.status_code}\nTS Len: {len(ts_blob) if ts_blob else 0}\np:{len(p_bytes)} e:{len(e_bytes)} t:{len(t_bytes)}\nJWT Error: {jwt_error if 'jwt_error' in locals() else 'None'}"
                                 raise Exception(debug_info)
                             elif key_blob and len(key_blob) == 16:
                                 # Unobfuscated 16-byte key - write directly
                                 print(f"[Spayee] Direct 16-byte key found", flush=True)
-                                with open(local_key_path, "wb") as f:
+                                key_abs_path = os.path.abspath(local_key_path)
+                                with open(key_abs_path, "wb") as f:
                                     f.write(key_blob)
-                                line = line.replace(f'URI="{uri}"', f'URI="{os.path.basename(local_key_path)}"')
+                                key_uri = key_abs_path.replace('\\', '/')
+                                line = line.replace(f'URI="{uri}"', f'URI="{key_uri}"')
                             else:
                                 raise Exception("Key blob missing or invalid length.")
                         new_lines.append(line)
                     elif line and not line.startswith("#"):
                         abs_line = urllib.parse.urljoin(base_url_hls, line) if not line.startswith("http") else line
-                        new_lines.append(abs_line)
+                        ts_urls.append(abs_line)
+                        local_ts_path = f"chunk_{len(ts_urls)-1}.ts"
+                        new_lines.append(local_ts_path)
                     else:
                         new_lines.append(line)
                         
-                local_m3u8 = f"spayee_{rand_id}.m3u8"
+                ts_dir = f"temp_ts_{rand_id}"
+                os.makedirs(ts_dir, exist_ok=True)
+                
+                # Download all TS chunks concurrently using cffi_requests
+                import concurrent.futures
+                
+                def download_single_ts(idx_url):
+                    idx, ts_url = idx_url
+                    chunk_path = os.path.join(ts_dir, f"chunk_{idx}.ts")
+                    for _ in range(5):
+                        try:
+                            resp = cffi_requests.get(ts_url, headers=headers_spayee, impersonate="chrome", timeout=15)
+                            if resp.status_code == 200:
+                                with open(chunk_path, "wb") as f:
+                                    f.write(resp.content)
+                                return True
+                        except:
+                            import time
+                            time.sleep(1)
+                    return False
+                
+                print(f"[Spayee] Downloading {len(ts_urls)} TS chunks via Python...", flush=True)
+                with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+                    results = list(executor.map(download_single_ts, enumerate(ts_urls)))
+                
+                if not all(results):
+                    raise Exception("Failed to download one or more TS chunks!")
+                
+                local_m3u8 = os.path.join(ts_dir, f"spayee_{rand_id}.m3u8")
                 with open(local_m3u8, "w", encoding='utf-8') as f:
                     f.write("\n".join(new_lines))
                     
                 import subprocess
                 ffmpeg_cmd = [
                     'ffmpeg', '-y',
-                    '-headers', f"Authorization: Bearer {_spayee_token}\r\nCookie: c_ujwt={_spayee_token}; jwt={_spayee_token}\r\nUser-Agent: Mozilla/5.0\r\nReferer: {base_url_hls}\r\nOrigin: {referer_origin}\r\n",
                     '-allowed_extensions', 'ALL',
                     '-protocol_whitelist', 'file,http,https,tcp,tls,crypto',
                     '-i', local_m3u8,
@@ -469,8 +507,9 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                     ret = 1
                     error_msg = f"Subprocess Error: {str(ex)}"
                     
-                if os.path.exists(local_m3u8): os.remove(local_m3u8)
                 if os.path.exists(local_key_path): os.remove(local_key_path)
+                import shutil
+                if os.path.exists(ts_dir): shutil.rmtree(ts_dir)
                     
                 if ret != 0:
                     return error_msg
