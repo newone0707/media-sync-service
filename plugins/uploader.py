@@ -855,10 +855,17 @@ async def handle_text_messages(client: Client, message: Message):
         
         try:
             # Login and fetch courses
-            courses = await asyncio.wait_for(spayee_client.fetch_courses(), timeout=45)
+            result = await asyncio.wait_for(spayee_client.fetch_courses(), timeout=45)
             
+            if not result or not isinstance(result, dict) or not result.get("success"):
+                err_msg = result.get("error", "Unknown error") if isinstance(result, dict) else "Authentication Failed"
+                await status_msg.edit_text(f"❌ **Login Failed!**\n`{err_msg}`")
+                clear_state(user_id)
+                return
+                
+            courses = result.get("courses", [])
             if not courses:
-                await status_msg.edit_text("❌ **No enrolled courses found or Authentication Failed!**")
+                await status_msg.edit_text("❌ **No enrolled courses found!**")
                 clear_state(user_id)
                 return
                 
