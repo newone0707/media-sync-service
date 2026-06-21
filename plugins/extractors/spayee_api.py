@@ -59,7 +59,7 @@ class SpayeeClient:
                 'url': '/s/authenticate'
             }
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
             }
             r = session.post(url, data=data, headers=headers, allow_redirects=False, timeout=15)
             
@@ -94,7 +94,7 @@ class SpayeeClient:
         try:
             session = requests.Session()
             session.headers.update({
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             })
             
             if self.token:
@@ -151,7 +151,7 @@ class SpayeeClient:
         url = f"{self.domain_url}/s/mycourses/get?skip=0&limit=100&queryData=%7B%7D&isVerticalFilters=true&categoryLevel=0&archived=false"
         
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             "Accept": "application/json"
         }
         
@@ -229,7 +229,7 @@ class SpayeeClient:
                     import aiohttp
                     api_url = f"{self.domain_url}/s/mycourses/get?skip=0&limit=100&queryData=%7B%7D"
                     headers = {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                         "Accept": "application/json"
                     }
                     cookies = {}
@@ -259,7 +259,7 @@ class SpayeeClient:
                     course_obj_id = m.group(1)
             
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 "Accept": "application/json"
             }
             cookies = {}
