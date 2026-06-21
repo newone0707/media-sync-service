@@ -363,13 +363,23 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                                 pad = len(payload_b64) % 4
                                 if pad: payload_b64 += '=' * (4 - pad)
                                 payload = json.loads(base64.urlsafe_b64decode(payload_b64).decode())
-                                def safe_b64decode(s):
-                                    if isinstance(s, str): s = s.encode()
-                                    pad = len(s) % 4
-                                    if pad: s += b'=' * (4 - pad)
-                                    return base64.urlsafe_b64decode(s)
-                                p_bytes = safe_b64decode(payload.get('p', ''))
-                                e_bytes = safe_b64decode(payload.get('e', ''))
+                                def extract_spayee_keys(s):
+                                    if not s: return b''
+                                    if isinstance(s, bytes): s = s.decode('utf-8')
+                                    import re, base64
+                                    if re.match(r'^[0-9a-fA-F]{32}', s):
+                                        hex_part = bytes.fromhex(s[:32])
+                                        b64_str = s[32:]
+                                        pad = len(b64_str) % 4
+                                        if pad: b64_str += '=' * (4 - pad)
+                                        try: return hex_part + base64.urlsafe_b64decode(b64_str)
+                                        except: return hex_part
+                                    else:
+                                        pad = len(s) % 4
+                                        if pad: s += '=' * (4 - pad)
+                                        return base64.urlsafe_b64decode(s)
+                                p_bytes = extract_spayee_keys(payload.get('p', ''))
+                                e_bytes = extract_spayee_keys(payload.get('e', ''))
                             except Exception as err:
                                 jwt_error = str(err)
                                 print(f"[Spayee] Failed to parse JWT claims: {err}", flush=True)
