@@ -467,7 +467,7 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                             if resp.status_code == 200:
                                 ts_data = resp.content
                                 if decrypted_key:
-                                    current_iv = bytes.fromhex(iv_hex) if iv_hex else (media_sequence + idx).to_bytes(16, 'big')
+                                    current_iv = bytes.fromhex(iv_hex) if iv_hex else b'\x00'*16
                                     if len(ts_data) % 16 != 0:
                                         ts_data = ts_data[:-(len(ts_data) % 16)]
                                     c = AES.new(decrypted_key, AES.MODE_CBC, iv=current_iv)
