@@ -422,29 +422,19 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                                                     break
 
                             if decrypted_key:
-                                # We MUST save the key inside ts_dir so ffmpeg finds it!
-                                # Wait, we haven't created ts_dir yet! We'll just put it in the same directory and refer to it by absolute path!
-                                import tempfile
-                                key_abs_path = os.path.abspath(local_key_path)
-                                with open(key_abs_path, "wb") as f:
-                                    f.write(decrypted_key)
-                                # Ffmpeg needs file:/// absolute paths for windows or just forward slashes
-                                key_uri = key_abs_path.replace('\\', '/')
-                                line = line.replace(f'URI="{uri}"', f'URI="{key_uri}"')
+                                # DO NOT WRITE KEY FILE
+                                pass
                             elif key_blob and len(key_blob) == 64:
                                 debug_info = f"Spayee Decryption Failed!\nTS Status: {r_ts.status_code}\nTS Len: {len(ts_blob) if ts_blob else 0}\np:{len(p_bytes)} e:{len(e_bytes)} t:{len(t_bytes)}\nJWT Error: {jwt_error if 'jwt_error' in locals() else 'None'}"
                                 raise Exception(debug_info)
                             elif key_blob and len(key_blob) == 16:
-                                # Unobfuscated 16-byte key - write directly
+                                # Unobfuscated 16-byte key
                                 print(f"[Spayee] Direct 16-byte key found", flush=True)
-                                key_abs_path = os.path.abspath(local_key_path)
-                                with open(key_abs_path, "wb") as f:
-                                    f.write(key_blob)
-                                key_uri = key_abs_path.replace('\\', '/')
-                                line = line.replace(f'URI="{uri}"', f'URI="{key_uri}"')
+                                decrypted_key = key_blob
                             else:
                                 raise Exception("Key blob missing or invalid length.")
-                        new_lines.append(line)
+                        # SKIP ADDING EXT-X-KEY TO M3U8
+                        pass
                     elif line and not line.startswith("#"):
                         abs_line = urllib.parse.urljoin(base_url_hls, line) if not line.startswith("http") else line
                         ts_urls.append(abs_line)
@@ -456,6 +446,15 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                 ts_dir = f"temp_ts_{rand_id}"
                 os.makedirs(ts_dir, exist_ok=True)
                 
+                # Parse media sequence for IV
+                media_sequence = 0
+                for line in sub_text.splitlines():
+                    if line.startswith("#EXT-X-MEDIA-SEQUENCE:"):
+                        try:
+                            media_sequence = int(line.split(":")[1].strip())
+                        except: pass
+                        break
+                
                 # Download all TS chunks concurrently using cffi_requests
                 import concurrent.futures
                 
@@ -466,20 +465,37 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                         try:
                             resp = cffi_requests.get(ts_url, headers=headers_spayee, impersonate="chrome", timeout=15)
                             if resp.status_code == 200:
+                                ts_data = resp.content
+                                if decrypted_key:
+                                    current_iv = bytes.fromhex(iv_hex) if iv_hex else (media_sequence + idx).to_bytes(16, 'big')
+                                    if len(ts_data) % 16 != 0:
+                                        ts_data = ts_data[:-(len(ts_data) % 16)]
+                                    c = AES.new(decrypted_key, AES.MODE_CBC, iv=current_iv)
+                                    ts_data = c.decrypt(ts_data)
+                                    
                                 with open(chunk_path, "wb") as f:
-                                    f.write(resp.content)
+                                    f.write(ts_data)
                                 return True
                         except:
                             import time
                             time.sleep(1)
                     return False
                 
-                print(f"[Spayee] Downloading {len(ts_urls)} TS chunks via Python...", flush=True)
+                print(f"[Spayee] Downloading and decrypting {len(ts_urls)} TS chunks via Python...", flush=True)
                 with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
                     results = list(executor.map(download_single_ts, enumerate(ts_urls)))
                 
                 if not all(results):
                     raise Exception("Failed to download one or more TS chunks!")
+                
+                # Verify chunk sizes
+                for i in range(len(ts_urls)):
+                    chunk_path = os.path.join(ts_dir, f"chunk_{i}.ts")
+                    if os.path.exists(chunk_path):
+                        if os.path.getsize(chunk_path) == 0:
+                            raise Exception(f"TS chunk {i} is 0 bytes! CDN blocked it.")
+                    else:
+                        raise Exception(f"TS chunk {i} is missing!")
                 
                 local_m3u8 = os.path.join(ts_dir, f"spayee_{rand_id}.m3u8")
                 with open(local_m3u8, "w", encoding='utf-8') as f:
