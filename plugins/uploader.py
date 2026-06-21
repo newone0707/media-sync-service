@@ -478,6 +478,58 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                                                         print(f"[Spayee] Decrypted key match at p/e/t XOR: k={k_off}, p={p_off}, e={e_off}, t={t_off}", flush=True)
                                                         break
 
+                                # 5. Try key_blob ^ p
+                                if not decrypted_key and p_bytes:
+                                    for k_off in range(len(key_blob) - 15):
+                                        if decrypted_key: break
+                                        for p_off in range(len(p_bytes) - 15):
+                                            k = bytes([a^b for a,b in zip(key_blob[k_off:k_off+16], p_bytes[p_off:p_off+16])])
+                                            if verify_key(k):
+                                                decrypted_key = k
+                                                print(f"[Spayee] Decrypted key match at key_blob ^ p: k={k_off}, p={p_off}", flush=True)
+                                                break
+                                                
+                                # 6. Try key_blob ^ e
+                                if not decrypted_key and e_bytes:
+                                    for k_off in range(len(key_blob) - 15):
+                                        if decrypted_key: break
+                                        for e_off in range(len(e_bytes) - 15):
+                                            k = bytes([a^b for a,b in zip(key_blob[k_off:k_off+16], e_bytes[e_off:e_off+16])])
+                                            if verify_key(k):
+                                                decrypted_key = k
+                                                print(f"[Spayee] Decrypted key match at key_blob ^ e: k={k_off}, e={e_off}", flush=True)
+                                                break
+
+                                # 7. Try p ^ e (without key_blob)
+                                if not decrypted_key and p_bytes and e_bytes:
+                                    for p_off in range(len(p_bytes) - 15):
+                                        if decrypted_key: break
+                                        for e_off in range(len(e_bytes) - 15):
+                                            k = bytes([a^b for a,b in zip(p_bytes[p_off:p_off+16], e_bytes[e_off:e_off+16])])
+                                            if verify_key(k):
+                                                decrypted_key = k
+                                                print(f"[Spayee] Decrypted key match at p ^ e: p={p_off}, e={e_off}", flush=True)
+                                                break
+
+                                # 8. Try p_bytes alone
+                                if not decrypted_key and p_bytes:
+                                    for p_off in range(len(p_bytes) - 15):
+                                        k = p_bytes[p_off:p_off+16]
+                                        if verify_key(k):
+                                            decrypted_key = k
+                                            print(f"[Spayee] Decrypted key match at p alone: p={p_off}", flush=True)
+                                            break
+
+                                # 9. Try e_bytes alone
+                                if not decrypted_key and e_bytes:
+                                    for e_off in range(len(e_bytes) - 15):
+                                        k = e_bytes[e_off:e_off+16]
+                                        if verify_key(k):
+                                            decrypted_key = k
+                                            print(f"[Spayee] Decrypted key match at e alone: e={e_off}", flush=True)
+                                            break
+
+
                                 # 5. Try just p XOR or e XOR or p/t or e/t
                                 if not decrypted_key:
                                     for k_off in range(len(key_blob) - 15):
