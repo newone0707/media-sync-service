@@ -244,6 +244,7 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
 
     if spayee_token and spayee_token != 'NO_TOKEN':
         def sync_spayee_dl():
+            nonlocal url
             try:
                 import re
                 import os
@@ -385,7 +386,7 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                                     key_blobs_to_test.append(base64.b64decode(spayee_key_b64))
                                 except: pass
                             
-                            if not key_blobs_to_test:
+                            if not decrypted_key and not key_blobs_to_test:
                                 print(f"[Spayee] Fetching key blob from: {abs_uri[:80]}", flush=True)
                                 for _ in range(5):
                                     r_key = cffi_requests.get(abs_uri, headers=headers_spayee, impersonate="chrome", timeout=15)
