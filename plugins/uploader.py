@@ -549,13 +549,21 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                 
                 # Download all TS chunks concurrently using cffi_requests
                 import concurrent.futures
+                import threading
+                thread_local = threading.local()
+
+                def get_session():
+                    if not hasattr(thread_local, "session"):
+                        thread_local.session = cffi_requests.Session(impersonate="chrome")
+                    return thread_local.session
                 
                 def download_single_ts(idx_url):
                     idx, ts_url = idx_url
                     chunk_path = os.path.join(ts_dir, f"chunk_{idx}.ts")
+                    session = get_session()
                     for _ in range(5):
                         try:
-                            resp = cffi_requests.get(ts_url, headers=headers_spayee, impersonate="chrome", timeout=15)
+                            resp = session.get(ts_url, headers=headers_spayee, timeout=15)
                             if resp.status_code == 200:
                                 ts_data = resp.content
                                 if decrypted_key:
@@ -566,7 +574,6 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                                     ts_data = c.decrypt(ts_data)
                                     
                                     # Fallback: forcefully drop the first 188 bytes (1 TS packet) to bypass any lingering IV corruption
-                                    # This guarantees FFMPEG won't crash on 'Invalid data found' due to a corrupted PAT/PMT/ID3 header
                                     if idx == 0 and len(ts_data) > 188:
                                         ts_data = ts_data[188:]
                                     
@@ -579,7 +586,7 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                     return False
                 
                 print(f"[Spayee] Downloading and decrypting {len(ts_urls)} TS chunks via Python...", flush=True)
-                with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
                     results = list(executor.map(download_single_ts, enumerate(ts_urls)))
                 
                 if not all(results):
