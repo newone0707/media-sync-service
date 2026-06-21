@@ -323,9 +323,38 @@ class SpayeeClient:
                                                         key_b64 = base64.b64encode(kblob).decode('utf-8')
                                         except:
                                             pass
-                                            
+
+                                        final_url = stream_url
+                                        try:
+                                            import base64
+                                            # Try to resolve final HLS_KEY locally using XOR
+                                            if len(kblob) == 64 and token_val and token_val != 'NO_TOKEN':
+                                                # Try to extract p and e from JWT
+                                                p_bytes, e_bytes = None, None
+                                                try:
+                                                    parts = token_val.split('.')
+                                                    if len(parts) >= 2:
+                                                        payload_b64 = parts[1] + '=' * (-len(parts[1]) % 4)
+                                                        payload_json = base64.b64decode(payload_b64).decode('utf-8')
+                                                        payload_dict = __import__('json').loads(payload_json)
+                                                        p_bytes = base64.b64decode(payload_dict.get('p', '') + '=' * (-len(payload_dict.get('p', '')) % 4)) if payload_dict.get('p') else None
+                                                        e_bytes = base64.b64decode(payload_dict.get('e', '') + '=' * (-len(payload_dict.get('e', '')) % 4)) if payload_dict.get('e') else None
+                                                except:
+                                                    pass
+
+                                                t_bytes = token_val.encode()
+                                                found_key = None
+                                                
+                                                def verify_key_sim(k):
+                                                    return False # Need TS chunk to verify, can't reliably do it here without downloading TS.
+                                                    
+                                                # Since we cannot verify without a TS chunk, we'll let uploader.py handle the derivation 
+                                                # Or if they want to use their own extension to get HLS_KEY they can.
+                                        except:
+                                            pass
+
                                         # The format will be Title : URL*Token*Key*Domain
-                                        formatted_links.append(f"{full_title} : {stream_url}*{token_val}*{key_b64}*{self.domain_url}")
+                                        formatted_links.append(f"{full_title} : {final_url}*{token_val}*{key_b64}*{self.domain_url}")
                                         return formatted_links
                         elif item_type == "pdf":
                             # Fetch PDF URL
