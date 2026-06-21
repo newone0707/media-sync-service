@@ -331,8 +331,8 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                             if b"<html" in r_ts.content[:500].lower() or b"cloudflare" in r_ts.content[:500].lower():
                                 raise Exception("Cloudflare blocked TS download! Returned HTML challenge.")
                                 
-                            # Increase blob size to 10000 to bypass large ID3 tags
-                            ts_blob = r_ts.content[:10000]
+                            # Increase blob size to 4000 to bypass large ID3 tags but remain fast
+                            ts_blob = r_ts.content[:4000]
                             # Make sure it's a multiple of 16
                             if len(ts_blob) % 16 != 0:
                                 ts_blob = ts_blob[:-(len(ts_blob) % 16)]
@@ -386,14 +386,17 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
 
                             # Sync byte check helper
                             def verify_key(k):
-                                if not ts_blob or len(ts_blob) < 500:
+                                if not ts_blob or len(ts_blob) < 1000:
                                     return False
                                 try:
                                     c = AES.new(k, AES.MODE_CBC, iv=iv)
                                     d = c.decrypt(ts_blob)
-                                    for i in range(len(d) - 1880):
-                                        if all(d[i + 188*j] == 0x47 for j in range(10)):
+                                    # Fast path: find 'G' (0x47) in C
+                                    idx = d.find(0x47)
+                                    while idx != -1 and idx <= len(d) - 940:
+                                        if d[idx+188] == 0x47 and d[idx+376] == 0x47 and d[idx+564] == 0x47 and d[idx+752] == 0x47 and d[idx+940] == 0x47:
                                             return True
+                                        idx = d.find(0x47, idx + 1)
                                 except:
                                     pass
                                 return False
