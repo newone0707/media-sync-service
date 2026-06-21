@@ -272,7 +272,8 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                     'Origin': referer_origin,
                 }
                 
-                r = cffi_requests.get(url, headers=headers_spayee, impersonate='chrome')
+                print(f"[Spayee] Fetching Master M3U8...", flush=True)
+                r = cffi_requests.get(url, headers=headers_spayee, impersonate='chrome', timeout=15)
                 if r.status_code != 200:
                     err_msg = f"Spayee Master M3U8 Error: HTTP {r.status_code}\nThis usually means the link has EXPIRED. Please extract fresh links!"
                     print(err_msg)
@@ -295,7 +296,8 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                 if best_res_url:
                     if not best_res_url.startswith("http"):
                         best_res_url = urllib.parse.urljoin(base_url_hls, best_res_url)
-                    r2 = cffi_requests.get(best_res_url, headers=headers_spayee, impersonate='chrome')
+                    print(f"[Spayee] Fetching Chunk M3U8...", flush=True)
+                    r2 = cffi_requests.get(best_res_url, headers=headers_spayee, impersonate='chrome', timeout=15)
                     sub_text = r2.text
                     base_url_hls = best_res_url.split("?")[0].rsplit("/", 1)[0] + "/"
                 else:
@@ -327,7 +329,8 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                             abs_uri = urllib.parse.urljoin(base_url_hls, uri) if not uri.startswith("http") else uri
                             
                             # Fetch TS for validation
-                            r_ts = cffi_requests.get(first_ts_url, headers=headers_spayee, impersonate="chrome")
+                            print(f"[Spayee] Fetching first TS...", flush=True)
+                            r_ts = cffi_requests.get(first_ts_url, headers=headers_spayee, impersonate="chrome", timeout=15)
                             if b"<html" in r_ts.content[:500].lower() or b"cloudflare" in r_ts.content[:500].lower():
                                 raise Exception("Cloudflare blocked TS download! Returned HTML challenge.")
                                 
@@ -377,7 +380,7 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                             if not key_blobs_to_test:
                                 print(f"[Spayee] Fetching key blob from: {abs_uri[:80]}", flush=True)
                                 for _ in range(5):
-                                    r_key = cffi_requests.get(abs_uri, headers=headers_spayee, impersonate="chrome")
+                                    r_key = cffi_requests.get(abs_uri, headers=headers_spayee, impersonate="chrome", timeout=15)
                                     if r_key.status_code != 200:
                                         print(f"[Spayee] Key fetch returned status: {r_key.status_code}", flush=True)
                                     if len(r_key.content) in (16, 64):
