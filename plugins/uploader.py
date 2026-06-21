@@ -788,6 +788,11 @@ async def handle_document(client: Client, message: Message):
         aes_key = None
         spayee_token = None
         
+        if "PSWD=" in link:
+            parts = link.split("PSWD=")
+            link = parts[0]
+            aes_key = parts[1].strip()
+
         # Clean the link for extension detection
         clean_link = link.split("*")[0] if "*" in link else link
         _link_path = clean_link.split("?")[0].lower()
