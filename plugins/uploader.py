@@ -328,7 +328,15 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                             
                             # Fetch TS for validation
                             r_ts = cffi_requests.get(first_ts_url, headers=headers_spayee, impersonate="chrome")
-                            ts_blob = r_ts.content[:1024]
+                            if b"<html" in r_ts.content[:500].lower() or b"cloudflare" in r_ts.content[:500].lower():
+                                raise Exception("Cloudflare blocked TS download! Returned HTML challenge.")
+                                
+                            # Increase blob size to 10000 to bypass large ID3 tags
+                            ts_blob = r_ts.content[:10000]
+                            # Make sure it's a multiple of 16
+                            if len(ts_blob) % 16 != 0:
+                                ts_blob = ts_blob[:-(len(ts_blob) % 16)]
+                                
                             iv = bytes.fromhex(iv_hex) if iv_hex else b'\x00'*16
                             
                             # Extract JWT claims for Spayee's 3-part XOR derivation
@@ -375,7 +383,7 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                                     return False
                                 try:
                                     c = AES.new(k, AES.MODE_CBC, iv=iv)
-                                    d = c.decrypt(ts_blob[:1024])
+                                    d = c.decrypt(ts_blob)
                                     for i in range(len(d) - 376):
                                         if d[i] == 0x47 and d[i+188] == 0x47 and d[i+376] == 0x47:
                                             return True
@@ -420,6 +428,23 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                                                     decrypted_key = k
                                                     print(f"[Spayee] Decrypted key match at p/e XOR: k={k_off}, p={p_off}, e={e_off}", flush=True)
                                                     break
+                                                    
+                                # 4. Try p/e/t XOR (newest Spayee obfuscation)
+                                if not decrypted_key and p_bytes and e_bytes and t_bytes:
+                                    for k_off in range(len(key_blob) - 15):
+                                        if decrypted_key: break
+                                        for p_off in range(len(p_bytes) - 15):
+                                            if decrypted_key: break
+                                            for e_off in range(len(e_bytes) - 15):
+                                                if decrypted_key: break
+                                                for t_off in range(len(t_bytes) - 15):
+                                                    pe = bytes([a^b for a,b in zip(p_bytes[p_off:p_off+16], e_bytes[e_off:e_off+16])])
+                                                    pet = bytes([a^b for a,b in zip(pe, t_bytes[t_off:t_off+16])])
+                                                    k = bytes([a^b for a,b in zip(key_blob[k_off:k_off+16], pet)])
+                                                    if verify_key(k):
+                                                        decrypted_key = k
+                                                        print(f"[Spayee] Decrypted key match at p/e/t XOR: k={k_off}, p={p_off}, e={e_off}, t={t_off}", flush=True)
+                                                        break
 
                             if decrypted_key:
                                 # DO NOT WRITE KEY FILE
