@@ -371,13 +371,14 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
 
                             # Sync byte check helper
                             def verify_key(k):
-                                if not ts_blob or len(ts_blob) < 188:
+                                if not ts_blob or len(ts_blob) < 500:
                                     return False
                                 try:
                                     c = AES.new(k, AES.MODE_CBC, iv=iv)
-                                    d = c.decrypt(ts_blob[:304])
-                                    if len(d) >= 188 and (d[0] == 0x47 or d.startswith(b"ID3")):
-                                        return True
+                                    d = c.decrypt(ts_blob[:1024])
+                                    for i in range(len(d) - 376):
+                                        if d[i] == 0x47 and d[i+188] == 0x47 and d[i+376] == 0x47:
+                                            return True
                                 except:
                                     pass
                                 return False
