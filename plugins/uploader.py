@@ -250,6 +250,11 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                 import urllib.parse
                 from curl_cffi import requests as cffi_requests
                 
+                user_provided_key = None
+                if 'HLS_KEY=' in url:
+                    parts = url.split('HLS_KEY=')
+                    url = parts[0]
+                    user_provided_key = bytes.fromhex(parts[1].strip())
                 raw_url = url
                 _spayee_token = spayee_token
                 spayee_key_b64 = None
@@ -369,6 +374,9 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                                 print(f"[Spayee] Failed to parse JWT claims: {err}", flush=True)
 
                             decrypted_key = None
+                            if user_provided_key:
+                                decrypted_key = user_provided_key
+                                print("[Spayee] Using User-Provided HLS_KEY!", flush=True)
                             key_blob = None
                             key_blobs_to_test = []
                             if spayee_key_b64:
