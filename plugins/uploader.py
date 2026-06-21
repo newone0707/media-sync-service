@@ -391,8 +391,8 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                                 try:
                                     c = AES.new(k, AES.MODE_CBC, iv=iv)
                                     d = c.decrypt(ts_blob)
-                                    for i in range(len(d) - 376):
-                                        if d[i] == 0x47 and d[i+188] == 0x47 and d[i+376] == 0x47:
+                                    for i in range(len(d) - 1880):
+                                        if all(d[i + 188*j] == 0x47 for j in range(10)):
                                             return True
                                 except:
                                     pass
@@ -453,6 +453,44 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                                                         print(f"[Spayee] Decrypted key match at p/e/t XOR: k={k_off}, p={p_off}, e={e_off}, t={t_off}", flush=True)
                                                         break
 
+                                # 5. Try just p XOR or e XOR or p/t or e/t
+                                if not decrypted_key:
+                                    for k_off in range(len(key_blob) - 15):
+                                        if decrypted_key: break
+                                        if p_bytes:
+                                            for p_off in range(len(p_bytes) - 15):
+                                                k = bytes([a^b for a,b in zip(key_blob[k_off:k_off+16], p_bytes[p_off:p_off+16])])
+                                                if verify_key(k):
+                                                    decrypted_key, print_msg = k, f"[Spayee] Decrypted key match at p XOR: k={k_off}, p={p_off}"
+                                                    break
+                                        if decrypted_key: print(print_msg, flush=True); break
+                                        if e_bytes:
+                                            for e_off in range(len(e_bytes) - 15):
+                                                k = bytes([a^b for a,b in zip(key_blob[k_off:k_off+16], e_bytes[e_off:e_off+16])])
+                                                if verify_key(k):
+                                                    decrypted_key, print_msg = k, f"[Spayee] Decrypted key match at e XOR: k={k_off}, e={e_off}"
+                                                    break
+                                        if decrypted_key: print(print_msg, flush=True); break
+                                        if p_bytes and t_bytes:
+                                            for p_off in range(len(p_bytes) - 15):
+                                                if decrypted_key: break
+                                                for t_off in range(len(t_bytes) - 15):
+                                                    pt = bytes([a^b for a,b in zip(p_bytes[p_off:p_off+16], t_bytes[t_off:t_off+16])])
+                                                    k = bytes([a^b for a,b in zip(key_blob[k_off:k_off+16], pt)])
+                                                    if verify_key(k):
+                                                        decrypted_key, print_msg = k, f"[Spayee] Decrypted key match at p/t XOR: k={k_off}, p={p_off}, t={t_off}"
+                                                        break
+                                        if decrypted_key: print(print_msg, flush=True); break
+                                        if e_bytes and t_bytes:
+                                            for e_off in range(len(e_bytes) - 15):
+                                                if decrypted_key: break
+                                                for t_off in range(len(t_bytes) - 15):
+                                                    et = bytes([a^b for a,b in zip(e_bytes[e_off:e_off+16], t_bytes[t_off:t_off+16])])
+                                                    k = bytes([a^b for a,b in zip(key_blob[k_off:k_off+16], et)])
+                                                    if verify_key(k):
+                                                        decrypted_key, print_msg = k, f"[Spayee] Decrypted key match at e/t XOR: k={k_off}, e={e_off}, t={t_off}"
+                                                        break
+                                        if decrypted_key: print(print_msg, flush=True); break
                             if decrypted_key:
                                 # DO NOT WRITE KEY FILE
                                 pass
