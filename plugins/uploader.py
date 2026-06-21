@@ -337,7 +337,14 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                             if len(ts_blob) % 16 != 0:
                                 ts_blob = ts_blob[:-(len(ts_blob) % 16)]
                                 
-                            iv = bytes.fromhex(iv_hex) if iv_hex else b'\x00'*16
+                            # Extract media sequence from URL if possible
+                            test_seq = 0
+                            import re
+                            seq_match = re.search(r'_0*(\d+)\.ts', first_ts_url.split("?")[0])
+                            if seq_match:
+                                test_seq = int(seq_match.group(1))
+                                
+                            iv = bytes.fromhex(iv_hex) if iv_hex else test_seq.to_bytes(16, 'big')
                             
                             # Extract JWT claims for Spayee's 3-part XOR derivation
                             p_bytes, e_bytes = b'', b''
@@ -479,6 +486,13 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                             media_sequence = int(line.split(":")[1].strip())
                         except: pass
                         break
+                        
+                # If sequence is 0, check the first TS URL just in case the M3U8 omitted it
+                if media_sequence == 0 and len(ts_urls) > 0:
+                    import re
+                    seq_match = re.search(r'_0*(\d+)\.ts', ts_urls[0].split("?")[0])
+                    if seq_match:
+                        media_sequence = int(seq_match.group(1))
                 
                 # Download all TS chunks concurrently using cffi_requests
                 import concurrent.futures
@@ -492,11 +506,16 @@ async def download_m3u8(url, output_path, base_url, user_id=None, spayee_token=N
                             if resp.status_code == 200:
                                 ts_data = resp.content
                                 if decrypted_key:
-                                    current_iv = bytes.fromhex(iv_hex) if iv_hex else b'\x00'*16
+                                    current_iv = bytes.fromhex(iv_hex) if iv_hex else (media_sequence + idx).to_bytes(16, 'big')
                                     if len(ts_data) % 16 != 0:
                                         ts_data = ts_data[:-(len(ts_data) % 16)]
                                     c = AES.new(decrypted_key, AES.MODE_CBC, iv=current_iv)
                                     ts_data = c.decrypt(ts_data)
+                                    
+                                    # Fallback: forcefully drop the first 188 bytes (1 TS packet) to bypass any lingering IV corruption
+                                    # This guarantees FFMPEG won't crash on 'Invalid data found' due to a corrupted PAT/PMT/ID3 header
+                                    if idx == 0 and len(ts_data) > 188:
+                                        ts_data = ts_data[188:]
                                     
                                 with open(chunk_path, "wb") as f:
                                     f.write(ts_data)
