@@ -355,7 +355,6 @@ class SpayeeClient:
 
                                         # The format will be Title : URL*Token*Key*Domain
                                         formatted_links.append(f"{full_title} : {final_url}*{token_val}*{key_b64}*{self.domain_url}")
-                                        return formatted_links
                         elif item_type == "pdf":
                             # Fetch PDF URL
                             await asyncio.sleep(1.5) # Rate limit protection
